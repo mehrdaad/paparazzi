@@ -374,6 +374,69 @@
       </program>
     </session>
 
+    <session name="Mission Computer Test">
+      <!-- Flight computer
+           Ivy bus on separate for for NPS messages
+           bus: 127.255.255.255:2222
+           port out: 4242
+           port in: 4243
+           - simulator
+      -->
+      <program name="Simulator">
+        <arg flag="-a" constant="@AIRCRAFT"/>
+        <arg flag="-b" constant="127.255.255.255:2222"/>
+        <arg flag="-t" constant="nps"/>
+      </program>
+
+      <!-- Mission computer
+           Ivy bus on separate for for NPS messages
+           bus: 127.255.255.255:8484
+           port out: 4243 (to Flight computer)
+           port in: 4242 (from Flight computer)
+           port out: 4244 (to GCS)
+           port in: 4245 (from GCS)
+           - data  link to flight computer
+           - ivy logger
+           - link forwarder to GCS
+      -->
+      <program name="Data Link">
+        <arg flag="-b" constant="127.255.255.255:8484"/>
+        <arg flag="-udp"/>
+        <arg flag="-udp_port" constant="4242"/>
+        <arg flag="-udp_uplink_port" constant="4243"/>
+      </program>
+
+
+      <!-- GCS computer
+           Ivy bus on separate for for NPS messages
+           bus: 127.255.255.255:2010
+           port out: 4244 (to Mission computer)
+           port in: 4245 (from Mission computer)           
+           - data  link to mission computer
+           - GCS
+           - server
+           - messages
+      -->
+      <program name="Data Link">
+        <arg flag="-b" constant="127.255.255.255:2010"/>
+        <arg flag="-udp"/>
+        <arg flag="-udp_port" constant="4244"/>
+        <arg flag="-udp_uplink_port" constant="4245"/>
+        <arg flag="-ping_period" constant="1000"/>
+        <arg flag="-status_period" constant="1000"/>
+      </program>
+      <program name="Server">
+        <arg flag="-b" constant="127.255.255.255:2010"/>
+        <arg flag="-n"/>
+      </program>
+      <program name="GCS">
+        <arg flag="-b" constant="127.255.255.255:2010"/>
+      </program>
+      <program name="Messages">
+        <arg flag="-c" constant="telemetry:*"/>
+        <arg flag="-b" constant="127.255.255.255:2010"/>
+      </program>
+    </session>
   </section>
 
 </control_panel>

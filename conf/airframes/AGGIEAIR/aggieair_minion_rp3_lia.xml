@@ -68,7 +68,7 @@ AggieAir RP3 Minion
       <configure name="EXTRA_DL_PORT" value="UART1"/>
       <configure name="EXTRA_DL_BAUD" value="B921600"/>
     </module>
-    <module name="lidar_sf11">
+    <!--module name="lidar_sf11">
       <configure name="LIDAR_SF11_I2C_DEV" value="i2c2"/>
     </module>
     <module name="battery_monitor.xml">
@@ -77,7 +77,7 @@ AggieAir RP3 Minion
       <define name="BATMON_CURRENT_SENSITIVITY" value="25.6"/>
       <define name="BATMON_TEMP_OFFSET" value="250"/>
       <define name="BATMON_TEMP_SENSITIVITY" value="10"/>
-    </module>
+    </module-->
   </modules>
 
   <!-- commands section -->
