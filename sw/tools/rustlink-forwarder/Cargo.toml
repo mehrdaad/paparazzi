@@ -1,0 +1,12 @@
+[package]
+name = "rustlink-forwarder"
+version = "0.1.0"
+authors = ["Michal Podhradsky <mpodhradsky@galois.com>"]
+
+[dependencies]
+#pprzlink = "0.3.1"
+pprzlink = { path = "/home/michal/Workspace/rust_projects/pprzlink_rust" }
+ivyrust = "0.1.1"
+clap = "2.27.1"
+lazy_static = "0.2"
+regex = "0.2"
