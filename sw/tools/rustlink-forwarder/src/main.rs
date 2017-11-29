@@ -1,28 +1,33 @@
+#![feature(rustc_private)]
+extern crate log; // logging
 #[macro_use]
-extern crate lazy_static;
-
-extern crate regex;
-
-extern crate ivyrust;
-extern crate pprzlink;
-extern crate clap;
+extern crate lazy_static; // global variables
+#[macro_use]
+extern crate slog; // logging
+#[macro_use]
+extern crate slog_scope; // logging
+extern crate slog_stdlog; // logging
+extern crate slog_term; // logging
+extern crate chrono; // datetime
+extern crate ivyrust; // ivy bus
+extern crate pprzlink; // pprzlink
+extern crate clap; // arguments
 
 use pprzlink::parser;
 use pprzlink::parser::{PprzDictionary, PprzMsgClassID, PprzMessage};
 use pprzlink::transport::PprzTransport;
 
 use ivyrust::*;
-
 use clap::{Arg, App};
-
 use std::{thread, time};
 use std::env;
 use std::error::Error;
 use std::fs::File;
-use std::sync::{Arc, Mutex};
-use std::net::UdpSocket;
-
-use regex::Regex;
+use std::sync::{Arc, Mutex}; // shared dictionary
+use std::net::UdpSocket; // networking
+use std::fs::OpenOptions; // logging
+use slog::Drain; // logging
+use chrono::prelude::*; // log filename
 
 lazy_static! {
     static ref MSG_QUEUE: Mutex<Vec<PprzMessage>> = Mutex::new(vec![]);
@@ -59,23 +64,19 @@ fn thread_datalink(port: &str, dictionary: Arc<Mutex<PprzDictionary>>) -> Result
 
     println!("{} at {}", name, addr);
     loop {
-        let (len, src) = socket.recv_from(&mut buf)?;
-        println!("{}: Received {} bytes from {}", name, len, src);
+        let (len, _) = socket.recv_from(&mut buf)?;
         for idx in 0..len {
             if rx.parse_byte(buf[idx]) {
                 let dict = dictionary.lock().unwrap();
-                let name = dict.get_msg_name(PprzMsgClassID::Datalink, rx.buf[1])
+                let msg_name = dict.get_msg_name(PprzMsgClassID::Datalink, rx.buf[1])
                     .unwrap();
-                let mut msg = dict.find_msg_by_name(&name).unwrap();
-
-                println!("{}: Found message: {}", name, msg.name);
-                println!("{}: Found sender: {}", name, rx.buf[0]);
+                let mut msg = dict.find_msg_by_name(&msg_name).unwrap();
 
                 // update message fields with real values
                 msg.update(&rx.buf);
 
                 // send the message
-                println!("{}: Received new msg: {} from {}", name, msg.to_string().unwrap(), src);
+                info!("{}: {}", name, msg.to_string().unwrap());
                 ivyrust::ivy_send_msg(msg.to_string().unwrap());
             }
         }
@@ -89,7 +90,7 @@ fn thread_datalink(port: &str, dictionary: Arc<Mutex<PprzDictionary>>) -> Result
 /// it sends it over on `udp_uplink_port`
 fn thread_telemetry(port: &str, _dictionary: Arc<Mutex<PprzDictionary>>) -> Result<(), Box<Error>> {
     let name = "thread_telemetry";
-    let addr = String::from("127.0.0.1:34254"); // TODO: fix ports
+    let addr = String::from("127.0.0.1:33255"); // TODO: fix ports
     let socket = UdpSocket::bind(&addr)?;
 
     let remote_addr = String::from("127.0.0.1");
@@ -97,29 +98,27 @@ fn thread_telemetry(port: &str, _dictionary: Arc<Mutex<PprzDictionary>>) -> Resu
 
     println!("{} at {}", name, addr);
     loop {
-    	
-    	{
-        // check for new messages in the message queue, super ugly
-        let mut lock = MSG_QUEUE.lock();
-        if let Ok(ref mut msg_queue) = lock {
-            //println!("{} MSG_queue locked", debug_time.elapsed());
-            while !msg_queue.is_empty() {
-                // get a message from the front of the queue
-                let new_msg = msg_queue.pop().unwrap();
+        {
+            // check for new messages in the message queue, super ugly
+            let mut lock = MSG_QUEUE.lock();
+            if let Ok(ref mut msg_queue) = lock {
+                while !msg_queue.is_empty() {
+                    // get a message from the front of the queue
+                    let new_msg = msg_queue.pop().unwrap();
 
-                // get a transort
-                let mut tx = PprzTransport::new();
-                //let name = new_msg.to_string().unwrap();
+                    // get a transort
+                    let mut tx = PprzTransport::new();
 
-                // construct a message from the transport
-                tx.construct_pprz_msg(&new_msg.to_bytes());
+                    info!("{}: {}", name, new_msg.to_string().unwrap());
 
-                // send to remote address
-                //println!("tx.buf = {:?}",tx.buf);
-                socket.send_to(&tx.buf, &remote_addr)?;
+                    // construct a message from the transport
+                    tx.construct_pprz_msg(&new_msg.to_bytes());
+
+                    // send to remote address
+                    socket.send_to(&tx.buf, &remote_addr)?;
+                }
             }
         }
-    }
 
         // sleep
         thread::sleep(time::Duration::from_millis(50));
@@ -129,21 +128,11 @@ fn thread_telemetry(port: &str, _dictionary: Arc<Mutex<PprzDictionary>>) -> Resu
 
 
 
-/// This global callback is just a cludge,
-/// because we can not currently bind individual messages separately
-/// like `ivy_bind_msg(my_msg.callback(), my_msg.to_ivy_regexpr())`
-///
-/// Instead, we use a shared static variable as `Vec<PprzMessage>` and
-/// another static variable for a `Vec<PprzDictionary>` to hold the parsed
-/// messages. When a callback is received, it will be a single string containing
-/// the whole message, for example '1 RTOS_MON 15 0 76280 0 495.53').
-///
-/// We parse the name and match it with regexpr for Datalink class, if it matches
-/// the global vec of messages will be updated.
+/// This global callback is just a cludge for now
 fn global_ivy_callback(mut data: Vec<String>) {
     let data = &(data.pop().unwrap());
     let mut lock = DICTIONARY.try_lock();
-    let name ="ivy callback";
+    let name = "ivy callback";
 
     if let Ok(ref mut dictionary_vector) = lock {
         if !dictionary_vector.is_empty() {
@@ -153,42 +142,63 @@ fn global_ivy_callback(mut data: Vec<String>) {
                 .unwrap()
                 .messages;
 
-            // iterate over messages
-            for mut msg in msgs {
-                let pattern = String::from(".* ") + &msg.name + " .*";
-                let re = Regex::new(&pattern).unwrap();
-                if re.is_match(data) {
-                	
-                    // parse the message and push it into the message queue
-                    let values: Vec<&str> = data.split(|c| c == ' ' || c == ',').collect();
-                    msg.set_sender(values[0].parse::<u8>().unwrap());
+            let values: Vec<&str> = data.split(|c| c == ' ' || c == ',').collect();
+            if values.len() >= 2 {
+                // iterate over messages
+                for mut msg in msgs {
+                    if values[1] == &msg.name {
+                        // parse the message and push it into the message queue
+                        msg.set_sender(values[0].parse::<u8>().unwrap());
+                        msg.update_from_string(&values);
+                        info!("{}: {}", name, msg.to_string().unwrap());
 
-                    // update from strig
-                    println!("{}: Matched message name = {}", name, msg.name);
-                    println!("{}: received data: {:?}", name, data);
-                    println!("{}: values: {:?}", name, values);
-                    println!("{}: fields: {:?}", name, msg.fields);
-                    msg.update_from_string(&values);
-                    println!("{}: new message is: {}", name, msg);
-
-                    // if found, update the global msg
-                    //println!("Trying to lock the queue");
-                    let mut msg_lock = MSG_QUEUE.lock();
-                    if let Ok(ref mut msg_vector) = msg_lock {
-                        // append at the end of vector
-                        msg_vector.push(msg);
-                        //println!("Global callback: msg vector len = {}", msg_vector.len());
+                        // if found, update the global msg
+                        let mut msg_lock = MSG_QUEUE.lock();
+                        if let Ok(ref mut msg_vector) = msg_lock {
+                            // append at the end of vector
+                            msg_vector.push(msg);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
     }
 }
 
+fn get_log_filename() -> String {
+    let time: DateTime<Local> = Local::now();
+    let log_path = time.year().to_string() + "_" + &format!("{:>02}", time.month()) + "_" +
+        &format!("{:>02}", time.day()) + "__" + "_" +
+        &format!("{:>02}", time.hour()) + "_" +
+        &format!("{:>02}", time.minute()) + "_" +
+        &format!("{:>02}", time.second()) + "_forwarder.log";
+    log_path
+}
 
 
 fn main() {
+    // open log file
+
+    let log_path = String::from("../../../var/logs/") + &get_log_filename();
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(log_path)
+        .unwrap();
+
+    // create logger
+    let decorator = slog_term::PlainSyncDecorator::new(file);
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let logger = slog::Logger::root(drain, o!());
+
+    // slog_stdlog uses the logger from slog_scope, so set a logger there
+    let _guard = slog_scope::set_global_logger(logger);
+
+    // register slog_stdlog as the log handler with the log crate
+    slog_stdlog::init().unwrap();
+
     // Construct command line arguments
     let matches = App::new(
         "Link forwarder.\n
@@ -236,6 +246,14 @@ fn main() {
             return;
         }
     };
+
+    info!("Rustlink-forwarder logger");
+    info!(
+        "ivy bus: {}, UDP port: {}, UDP uplink port: {}",
+        ivy_bus,
+        udp_port,
+        udp_uplink_port
+    );
 
     // spin the main IVY loop
     let _ = thread::spawn(move || if let Err(e) = thread_ivy_main(ivy_bus) {

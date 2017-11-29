@@ -61,6 +61,10 @@
       <go from="p4" hmode="route" wp="p1"/>
       <deroute block="stay_p1"/>
     </block>
+    <block name="Mission" strip_button="Mission">
+      <call fun="mission_run()"/>
+      <deroute block="Standby"/>
+    </block>
     <block name="Oval">
       <oval p1="p1" p2="p2" radius="-1"/>
     </block>

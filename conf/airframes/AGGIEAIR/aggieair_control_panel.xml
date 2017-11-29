@@ -71,6 +71,8 @@
     <program name="ADS-B Intruders receiver" command="sw/ground_segment/misc/sbs2ivy">
       <arg flag="--ac" constant="@AC_ID"/>
     </program>
+    <program name="Link Forwarder" command="sw/tools/rustlink-forwarder/link_forwarder.sh"/>
+    <program name="Ivy Logger" command="sw/tools/ivy_logger/ivyLogger.sh"/>
  </section>
 
   <section name="sessions">
@@ -380,12 +382,13 @@
            bus: 127.255.255.255:2222
            port out: 4242
            port in: 4243
-           - simulator
+           - simulator, nodisplay
       -->
       <program name="Simulator">
         <arg flag="-a" constant="@AIRCRAFT"/>
         <arg flag="-b" constant="127.255.255.255:2222"/>
         <arg flag="-t" constant="nps"/>
+        <arg flag="--nodisplay"/>
       </program>
 
       <!-- Mission computer
@@ -404,8 +407,19 @@
         <arg flag="-udp"/>
         <arg flag="-udp_port" constant="4242"/>
         <arg flag="-udp_uplink_port" constant="4243"/>
+        <arg flag="-ping_period" constant="1000"/>
+        <arg flag="-status_period" constant="1000"/>
       </program>
 
+      <program name="Ivy Logger">
+        <arg flag="-b" constant="127.255.255.255:8484"/>
+      </program>
+
+      <program name="Link Forwarder">
+        <arg flag="-b" constant="127.255.255.255:8484"/>
+        <arg flag="-d" constant="4245"/>
+        <arg flag="-u" constant="4244"/>
+      </program>
 
       <!-- GCS computer
            Ivy bus on separate for for NPS messages
@@ -427,13 +441,13 @@
       </program>
       <program name="Server">
         <arg flag="-b" constant="127.255.255.255:2010"/>
-        <arg flag="-n"/>
       </program>
       <program name="GCS">
         <arg flag="-b" constant="127.255.255.255:2010"/>
       </program>
       <program name="Messages">
-        <arg flag="-c" constant="telemetry:*"/>
+        <arg flag="-c" constant="datalink"/>
+        <arg flag="-c" constant="ground"/>
         <arg flag="-b" constant="127.255.255.255:2010"/>
       </program>
     </session>
